@@ -1,0 +1,53 @@
+version: '3'
+
+vars:
+  PROJECT_NAME: ntfy-hub-mcp
+  OUT_BIN: '{{.PROJECT_NAME}}.exe' # For Windows executable
+
+tasks:
+  default:
+    cmds:
+      - task: build
+    desc: Build the project
+
+  build:
+    desc: Build the ntfy-hub-mcp executable
+    cmds:
+      - go build -o {{.OUT_BIN}}
+    dir: . # Specify directory here
+
+  run:
+    desc: Run the ntfy-hub-mcp server (requires prior build)
+    cmds:
+      - ./{{.OUT_BIN}}
+    dir: . # Specify directory here
+    env:
+      NTFY_URL: '{{.NTFY_URL | default "https://ntfy.sh"}}'
+      NTFY_TOPIC_OUT: '{{.NTFY_TOPIC_OUT | default "agent-output"}}'
+      NTFY_TOPIC_IN: '{{.NTFY_TOPIC_IN | default "agent-input"}}'
+
+  test:
+    desc: Run all Go tests
+    cmds:
+      - go test -v ntfy-hub-mcp/ntfy
+    dir: . # Specify directory here
+
+  lint:
+    desc: Run Go linters (go fmt, go vet)
+    cmds:
+      - go fmt ./...
+      - go vet ./...
+    dir: . # Specify directory here
+
+  clean:
+    desc: Clean up build artifacts and caches
+    cmds:
+      - rm -f {{.OUT_BIN}}
+      - go clean
+    dir: . # Specify directory here
+
+  install-tools:
+    desc: Install Go development tools (e.g., golangci-lint)
+    cmds:
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    dir: . # Specify directory here
