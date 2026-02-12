@@ -23,3 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Created `LICENSE` file (MIT License).
   - Created `README.md` in Japanese.
 - **Git Repository Initialization**: Initialized Git repository and pushed to GitHub (`https://github.com/utenadev/ntfy-hub-mcp`).
+- **CI/CD**: Added GitHub Actions workflow (`.github/workflows/test.yml`) for automated testing on push and pull requests.
+- **Documentation**: Added `CLAUDE.md` for Claude Code guidance with project overview and development commands.
+- **Documentation**: Consolidated root `PLAN.md` into `docs/PLAN.md` with architecture overview.
+
+### Changed
+- **Refactoring**: Improved code organization in `main.go`:
+  - Extracted constants for server metadata, default values, environment variables, tool names, parameters, and error messages.
+  - Added `config` struct to hold server configuration.
+  - Split tool handlers into separate functions (`makePublishHandler`, `makeWaitForReplyHandler`).
+  - Added `registerTools` function for cleaner tool registration.
+- **Refactoring**: Enhanced `ntfy/client.go`:
+  - Introduced `HTTPClient` interface for better testability.
+  - Added `buildURL` helper method for URL construction.
+  - Extracted `processMessages` and `waitForFirstMessage` helper methods.
+  - Added constants for default values, headers, event types, and error messages.
+- **Testing**: Fixed `TestClient_SubscribeOnce` to properly handle SSE message format and connection closure.

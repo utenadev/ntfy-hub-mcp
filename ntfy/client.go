@@ -6,7 +6,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+)
+
+const (
+	// Default ntfy server URL
+	defaultBaseURL = "https://ntfy.sh"
+
+	// HTTP headers
+	headerTitle = "Title"
+
+	// SSE event types
+	eventMessage = "message"
+
+	// Error messages
+	errPublishFailed  = "failed to publish message, status: %d"
+	errNoMessage     = "no message received"
 )
 
 // Message represents a ntfy message
@@ -20,39 +36,62 @@ type Message struct {
 	Tags    []string `json:"tags,omitempty"`
 }
 
+// HTTPClient interface for testability
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+	Get(url string) (*http.Response, error)
+}
+
 // Client handles communication with ntfy
 type Client struct {
 	BaseURL string
+	http    HTTPClient
 }
 
 // NewClient creates a new ntfy client
 func NewClient(baseURL string) *Client {
 	if baseURL == "" {
-		baseURL = "https://ntfy.sh"
+		baseURL = defaultBaseURL
 	}
-	return &Client{BaseURL: baseURL}
+	return &Client{
+		BaseURL: baseURL,
+		http:    http.DefaultClient,
+	}
+}
+
+// setHTTPClient sets a custom HTTP client (used for testing)
+func (c *Client) setHTTPClient(client HTTPClient) {
+	c.http = client
+}
+
+// buildURL builds the full URL for a topic
+func (c *Client) buildURL(topic string, withJSON bool) string {
+	url := fmt.Sprintf("%s/%s", c.BaseURL, topic)
+	if withJSON {
+		url += "/json"
+	}
+	return url
 }
 
 // Publish sends a message to a topic
 func (c *Client) Publish(topic string, message string, title string) error {
-	url := fmt.Sprintf("%s/%s", c.BaseURL, topic)
-	req, err := http.NewRequest("POST", url, bytes.NewBufferString(message))
+	req, err := http.NewRequest("POST", c.buildURL(topic, false), bytes.NewBufferString(message))
 	if err != nil {
 		return err
 	}
 
 	if title != "" {
-		req.Header.Set("Title", title)
+		req.Header.Set(headerTitle, title)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to publish message, status: %d", resp.StatusCode)
+		return fmt.Errorf(errPublishFailed, resp.StatusCode)
 	}
 
 	return nil
@@ -60,14 +99,18 @@ func (c *Client) Publish(topic string, message string, title string) error {
 
 // Subscribe listens for messages on a topic using SSE
 func (c *Client) Subscribe(topic string, handler func(Message)) error {
-	url := fmt.Sprintf("%s/%s/json", c.BaseURL, topic)
-	resp, err := http.Get(url)
+	resp, err := c.http.Get(c.buildURL(topic, true))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	scanner := bufio.NewScanner(resp.Body)
+	return c.processMessages(resp.Body, handler)
+}
+
+// processMessages processes SSE messages from a reader
+func (c *Client) processMessages(r io.Reader, handler func(Message)) error {
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		var msg Message
 		line := scanner.Bytes()
@@ -80,7 +123,7 @@ func (c *Client) Subscribe(topic string, handler func(Message)) error {
 			continue
 		}
 
-		if msg.Event == "message" {
+		if msg.Event == eventMessage {
 			handler(msg)
 		}
 	}
@@ -90,19 +133,30 @@ func (c *Client) Subscribe(topic string, handler func(Message)) error {
 
 // SubscribeOnce listens for the first message on a topic using SSE with context for timeout
 func (c *Client) SubscribeOnce(ctx context.Context, topic string) (*Message, error) {
-	url := fmt.Sprintf("%s/%s/json", c.BaseURL, topic)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.buildURL(topic, true), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	scanner := bufio.NewScanner(resp.Body)
+	msg, err := c.waitForFirstMessage(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if msg == nil {
+		return nil, fmt.Errorf(errNoMessage)
+	}
+	return msg, nil
+}
+
+// waitForFirstMessage waits for the first message event from a reader
+func (c *Client) waitForFirstMessage(r io.Reader) (*Message, error) {
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		var msg Message
 		line := scanner.Bytes()
@@ -114,7 +168,7 @@ func (c *Client) SubscribeOnce(ctx context.Context, topic string) (*Message, err
 			continue
 		}
 
-		if msg.Event == "message" {
+		if msg.Event == eventMessage {
 			return &msg, nil
 		}
 	}
@@ -123,5 +177,5 @@ func (c *Client) SubscribeOnce(ctx context.Context, topic string) (*Message, err
 		return nil, err
 	}
 
-	return nil, fmt.Errorf("no message received")
+	return nil, nil
 }

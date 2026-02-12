@@ -45,8 +45,10 @@ func TestClient_Publish(t *testing.T) {
 func TestClient_SubscribeOnce(t *testing.T) {
 	testMessage := "Hello from ntfy"
 	testTopic := "test_sub_topic"
-	
-	// Mock SSE server
+
+	done := make(chan bool)
+
+	// Mock SSE server - send message and close connection
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/"+testTopic+"/json" {
 			t.Errorf("Expected URL path /%s/json, got %s", testTopic, r.URL.Path)
@@ -55,16 +57,20 @@ func TestClient_SubscribeOnce(t *testing.T) {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 
-		// Send a message after a short delay
-		time.Sleep(50 * time.Millisecond) // Give client time to connect
-		fmt.Fprintf(w, "data: {\"id\":\"1\",\"time\":1678886400,\"event\":\"message\",\"topic\":\"%s\",\"message\":\"%s\"}\n\n", testTopic, testMessage)
-		w.(http.Flusher).Flush() // Ensure message is sent
-		// No need to wait for r.Context().Done() here, SubscribeOnce expects connection to close after first message.
+		// Send SSE message with proper format (ntfy.sh returns raw JSON lines)
+		jsonData := fmt.Sprintf(`{"id":"1","time":1678886400,"event":"message","topic":"%s","message":"%s"}`, testTopic, testMessage)
+		fmt.Fprint(w, jsonData)
+		fmt.Fprint(w, "\n")
+		w.(http.Flusher).Flush()
+
+		// Wait a bit to ensure client reads the message
+		time.Sleep(100 * time.Millisecond)
+		close(done)
 	}))
 	defer server.Close()
 
 	client := NewClient(server.URL)
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	msg, err := client.SubscribeOnce(ctx, testTopic)
@@ -92,7 +98,7 @@ func TestClient_SubscribeOnce_Timeout(t *testing.T) {
 		w.Header().Set("Connection", "keep-alive")
 		// Do not send any message
 		// Keep handler alive until client disconnects or context cancels
-		<-r.Context().Done() 
+		<-r.Context().Done()
 	}))
 	defer server.Close()
 
