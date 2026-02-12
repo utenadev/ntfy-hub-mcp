@@ -21,7 +21,7 @@ const (
 	eventMessage = "message"
 
 	// Error messages
-	errPublishFailed  = "failed to publish message, status: %d"
+	errPublishFailed = "failed to publish message, status: %d"
 	errNoMessage     = "no message received"
 )
 
