@@ -1,5 +1,17 @@
 # ntfy-hub-mcp PLAN
 
+## アーキテクチャ概要
+
+ntfyを利用して、AIエージェントと人間がスマホやPCを通じて対話できる仕組みをGoで構築します。
+
+### 通信フロー
+1.  **人間**: ntfyアプリまたは `curl` を使ってメッセージを送信。
+    - `POST https://ntfy.sh/<topic_human_to_agent>`
+2.  **エージェント (Go)**: SSE (Server-Sent Events) で上記トピックを監視。
+3.  **エージェント (Go)**: 応答を生成。
+4.  **エージェント (Go)**: 応答を送信。
+    - `POST https://ntfy.sh/<topic_agent_to_human>`
+
 ## 現在の進捗
 *   MCP サーバーとしての基本機能 (`ntfy_publish`, `ntfy_wait_for_reply`) の実装完了。
 *   `go.mod` および `main.go` のリファクタリング (`ntfy-hub-mcp` へ名称変更)。
